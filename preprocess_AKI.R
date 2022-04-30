@@ -8,7 +8,7 @@ library(sctransform)
 
 memory.limit(99999999999999999)
 
-setwd("//homer.win.ad.jhu.edu/Parikh Lab/Fellows/Yumeng/KPMP_snRNA")
+setwd()
 count_3210205<-Read10X(data.dir = "32-10205") #no contamination
 AKI_32_10205<- CreateSeuratObject(counts = count_3210205, project = "32-10205")
 
