@@ -1,0 +1,150 @@
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns 
+import scanpy as sc
+import scipy as sp
+import numpy as np
+import anndata
+import loompy
+import pickle
+from scipy import stats
+from sklearn.metrics import cohen_kappa_score
+import matplotlib.pyplot as pl
+from matplotlib import rcParams
+
+sc.settings.verbosity = 3 
+sc.logging.print_header()
+
+import pySingleCellNet as pySCN
+
+adTrain = sc.read_h5ad("/content/drive/MyDrive/KPMP/snRNA/integration/human4integration_01042022.h5ad")
+adQuery = sc.read_h5ad("/content/drive/MyDrive/KPMP/snRNA/integration/mouse4integration_01042022.h5ad")
+
+train=sc.AnnData(X=adTrain.X,obs=adTrain.obs,var=adTrain.var)
+query=sc.AnnData(X=adQuery.X,obs=adQuery.obs,var=adQuery.var)
+
+train.var.index=train.var['features']
+query.var.index=query.var['features']
+
+# Annotation 1: PT.1, PT.2, PT.3 as healthy, PT.4 PT.5 as injury
+celltypedict={"Healthy_S1S2":"PT_Healthy","Healthy_S3":"PT_Healthy","Fib":"Fib","EC1":"EC","Failed_Repair_PT":"PT_Injury","DCT":"DCT","CTAL1":"TAL","CTAL2":"TAL",
+              "DTL-ATL":"DTL-ATL","ICB":"ICB","CNT":"CNT","DCT-CNT":"DCT","ICA":"ICA","MTAL":"TAL","Mo":"Myeloid","PC1":"PC","Per":"Pericyte","PC2":"PC","Tcell":"Lymphocyte",
+              "POD":"POD","PEC":"PEC","URO":"URO","MD":"MD","EC2":"EC","Repairing_PT":"PT_Injury","Injured_S1S2":"PT_Injury","Severe_Injured_PT":"PT_Injury",
+              "Injured_S3":"PT_Injury"}
+query.obs['celltype_merged']=query.obs['celltype2'].map(celltypedict)
+
+celltypedict={"PT.1":"PT_Healthy","PT.2":"PT_Healthy","PT.3":"PT_Healthy","PT.4":"PT_Injury","PT.5":"PT_Injury","DTL_ATL":"DTL_ATL","TAL":"TAL",
+              "DCT":"DCT","ICA":"ICA","ICB":"ICB","PC":"PC","Myeloid":"Myeloid","Lymphocyte":"Lymphocyte","PEC":"PEC","EC":"EC",
+              "POD":"POD","Fib":"Fib","Pericyte":"Pericyte"}
+train.obs['celltype_merged']=train.obs['nuctype2'].map(celltypedict)
+
+#internal validation using human data only
+train_pt=train[train.obs['celltype_merged2']=="PT",]
+query_pt=query[query.obs['celltype_merged2']=="PT",]
+
+np.random.seed(30729)
+train_zoomin, val_zoomin = pySCN.splitCommonAnnData(train_pt, ncells=2000,dLevel="celltype_merged",cells_reserved=400)
+[cgenesA_zoomin, xpairs_zoomin, tspRF_zoomin] = pySCN.scn_train(train_zoomin, nTopGenes = 150, nRand = 100, nTrees = 1000 ,nTopGenePairs = 100, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+adVal_zoomin = pySCN.scn_classify(val_zoomin, cgenesA_zoomin, xpairs_zoomin, tspRF_zoomin, nrand = 0)
+
+assessment_zoomin['kappa'],assessment_zoomin['accuracy'],assessment_zoomin['AUPRC_w'] #kappa = 0.94
+
+#train using all human PT, project on mouse PT
+[cgenesA_allhuman_zoomin, xpairs_allhuman_zoomin, tspRF_allhuman_zoomin] = pySCN.scn_train(train_pt, nTopGenes = 150, nRand = 100, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+query_zoomin = pySCN.scn_classify(query_pt, cgenesA_allhuman_zoomin, xpairs_allhuman_zoomin, tspRF_allhuman_zoomin, nrand = 0)
+cohen_kappa_score(query_zoomin.obs['celltype_merged'],query_zoomin.obs['SCN_class']) #kappa= 0.34
+
+#train using human control PT, project on mouse control PT
+train_control=train[train.obs['case_type']=="Healthy_Control",]
+query_control=query[query.obs['Group']=="Control",]
+
+train_control_pt=train_control[train_control.obs['celltype_merged2']=="PT",]
+query_control_pt=query_control[query_control.obs['celltype_merged2']=="PT",]
+[cgenesA_control_pt, xpairs_control_pt, tspRF_control_pt] = pySCN.scn_train(train_control_pt, nTopGenes = 150, nRand = 0, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+query_zoomin_control = pySCN.scn_classify(query_control_pt, cgenesA_control_pt, xpairs_control_pt, tspRF_control_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_control.obs['celltype_merged'],query_zoomin_control.obs['SCN_class']) # kappa = 0.03
+
+#train using human AKI PT, project on mouse AKI PT at different timepoints
+train_aki=train[train.obs['case_type']=="AKI",]
+query_2d=query[query.obs['Group']=="2days",]
+query_14d=query[query.obs['Group']=="14days",]
+query_aki=query[query.obs['Group']!="Control",]
+
+train_aki_pt=train_aki[train_aki.obs['celltype_merged2']=="PT",]
+query_2d_pt=query_2d[query_2d.obs['celltype_merged2']=="PT",]
+query_14d_pt=query_14d[query_14d.obs['celltype_merged2']=="PT",]
+query_aki_pt=query_aki[query_aki.obs['celltype_merged2']=="PT",]
+
+[cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt] = pySCN.scn_train(train_aki_pt, nTopGenes = 150, nRand = 0, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+
+query_zoomin_2d = pySCN.scn_classify(query_2d_pt, cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_2d.obs['celltype_merged'],query_zoomin_2d.obs['SCN_class']) #kappa= 0.25
+
+query_zoomin_14d = pySCN.scn_classify(query_14d_pt, cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_14d.obs['celltype_merged'],query_zoomin_14d.obs['SCN_class']) #kappa = 0.31
+
+query_zoomin_aki = pySCN.scn_classify(query_aki_pt, cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_aki.obs['celltype_merged'],query_zoomin_aki.obs['SCN_class']) #kappa= 0.11
+
+# Annotation 2: PT.1, PT.2, PT.3 as healthy, PT.4 as injury, PT.5 as failed to repair PT
+celltypedict={"Healthy_S1S2":"PT_Healthy","Healthy_S3":"PT_Healthy","Fib":"Fib","EC1":"EC","Failed_Repair_PT":"PT_FR","DCT":"DCT","CTAL1":"TAL","CTAL2":"TAL",
+              "DTL-ATL":"DTL-ATL","ICB":"ICB","CNT":"CNT","DCT-CNT":"DCT","ICA":"ICA","MTAL":"TAL","Mo":"Myeloid","PC1":"PC","Per":"Pericyte","PC2":"PC","Tcell":"Lymphocyte",
+              "POD":"POD","PEC":"PEC","URO":"URO","MD":"MD","EC2":"EC","Repairing_PT":"PT_Injury","Injured_S1S2":"PT_Injury","Severe_Injured_PT":"PT_Injury",
+              "Injured_S3":"PT_Injury"}
+query.obs['celltype_merged']=query.obs['celltype2'].map(celltypedict)
+
+celltypedict={"PT.1":"PT_Healthy","PT.2":"PT_Healthy","PT.3":"PT_Healthy","PT.4":"PT_Injury","PT.5":"PT_FR","DTL_ATL":"DTL_ATL","TAL":"TAL",
+              "DCT":"DCT","ICA":"ICA","ICB":"ICB","PC":"PC","Myeloid":"Myeloid","Lymphocyte":"Lymphocyte","PEC":"PEC","EC":"EC",
+              "POD":"POD","Fib":"Fib","Pericyte":"Pericyte"}
+train.obs['celltype_merged']=train.obs['nuctype2'].map(celltypedict)
+
+
+#internal validation using human data only
+train_pt=train[train.obs['celltype_merged2']=="PT",]
+query_pt=query[query.obs['celltype_merged2']=="PT",]
+
+np.random.seed(30729)
+train_zoomin, val_zoomin = pySCN.splitCommonAnnData(train_pt, ncells=1000,dLevel="celltype_merged",cells_reserved=400)
+[cgenesA_zoomin, xpairs_zoomin, tspRF_zoomin] = pySCN.scn_train(train_zoomin, nTopGenes = 150, nRand = 0, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+adVal_zoomin = pySCN.scn_classify(val_zoomin, cgenesA_zoomin, xpairs_zoomin, tspRF_zoomin, nrand = 0)
+
+assessment_zoomin['kappa'],assessment_zoomin['accuracy'],assessment_zoomin['AUPRC_w'] #kappa = 0.88
+
+#train using all human PT, project on mouse PT
+[cgenesA_allhuman_zoomin, xpairs_allhuman_zoomin, tspRF_allhuman_zoomin] = pySCN.scn_train(train_pt, nTopGenes = 150, nRand = 100, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+query_zoomin = pySCN.scn_classify(query_pt, cgenesA_allhuman_zoomin, xpairs_allhuman_zoomin, tspRF_allhuman_zoomin, nrand = 0)
+cohen_kappa_score(query_zoomin.obs['celltype_merged'],query_zoomin.obs['SCN_class']) #kappa= 0.27
+
+#train using human control PT, project on mouse control PT
+train_control=train[train.obs['case_type']=="Healthy_Control",]
+query_control=query[query.obs['Group']=="Control",]
+
+train_control_pt=train_control[train_control.obs['celltype_merged2']=="PT",]
+query_control_pt=query_control[query_control.obs['celltype_merged2']=="PT",]
+[cgenesA_control_pt, xpairs_control_pt, tspRF_control_pt] = pySCN.scn_train(train_control_pt, nTopGenes = 150, nRand = 0, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+query_zoomin_control = pySCN.scn_classify(query_control_pt, cgenesA_control_pt, xpairs_control_pt, tspRF_control_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_control.obs['celltype_merged'],query_zoomin_control.obs['SCN_class']) # kappa = 0.08
+
+#train using human AKI PT, project on mouse AKI PT at different timepoints
+train_aki=train[train.obs['case_type']=="AKI",]
+query_2d=query[query.obs['Group']=="2days",]
+query_14d=query[query.obs['Group']=="14days",]
+query_aki=query[query.obs['Group']!="Control",]
+
+train_aki_pt=train_aki[train_aki.obs['celltype_merged2']=="PT",]
+query_2d_pt=query_2d[query_2d.obs['celltype_merged2']=="PT",]
+query_14d_pt=query_14d[query_14d.obs['celltype_merged2']=="PT",]
+query_aki_pt=query_aki[query_aki.obs['celltype_merged2']=="PT",]
+
+[cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt] = pySCN.scn_train(train_aki_pt, nTopGenes = 150, nRand = 0, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged", stratify=True, limitToHVG=True)
+
+query_zoomin_2d = pySCN.scn_classify(query_2d_pt, cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_2d.obs['celltype_merged'],query_zoomin_2d.obs['SCN_class']) #kappa= 0
+
+query_zoomin_14d = pySCN.scn_classify(query_14d_pt, cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_14d.obs['celltype_merged'],query_zoomin_14d.obs['SCN_class']) #kappa = 0.01
+
+query_zoomin_aki = pySCN.scn_classify(query_aki_pt, cgenesA_aki_pt, xpairs_aki_pt, tspRF_aki_pt, nrand = 0)
+cohen_kappa_score(query_zoomin_aki.obs['celltype_merged'],query_zoomin_aki.obs['SCN_class']) #kappa= 0
+
