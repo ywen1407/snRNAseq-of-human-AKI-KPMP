@@ -18,8 +18,8 @@ sc.logging.print_header()
 
 import pySingleCellNet as pySCN
 
-adTrain = sc.read_h5ad("/content/drive/MyDrive/KPMP/snRNA/integration/human4integration_01042022.h5ad")
-adQuery = sc.read_h5ad("/content/drive/MyDrive/KPMP/snRNA/integration/mouse4integration_01042022.h5ad")
+adTrain = sc.read_h5ad("/human4integration_01042022.h5ad")
+adQuery = sc.read_h5ad("/mouse4integration_01042022.h5ad")
 
 train=sc.AnnData(X=adTrain.X,obs=adTrain.obs,var=adTrain.var)
 query=sc.AnnData(X=adQuery.X,obs=adQuery.obs,var=adQuery.var)
