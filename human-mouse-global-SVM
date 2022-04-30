@@ -1,0 +1,131 @@
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns 
+import scanpy as sc
+import scipy as sp
+import numpy as np
+import anndata
+import loompy
+import pickle
+from scipy import stats
+from sklearn.metrics import cohen_kappa_score
+import matplotlib.pyplot as pl
+from matplotlib import rcParams
+from sklearn import svm
+
+sc.settings.verbosity = 3 
+sc.logging.print_header()
+
+import pySingleCellNet as pySCN
+
+# Load dataset first
+
+adTrain = sc.read_h5ad("/human4integration_01042022.h5ad")
+adQuery = sc.read_h5ad("/mouse4integration_01042022.h5ad")
+
+train=sc.AnnData(X=adTrain.X,obs=adTrain.obs,var=adTrain.var)
+query=sc.AnnData(X=adQuery.X,obs=adQuery.obs,var=adQuery.var)
+
+train.var.index=train.var['features']
+query.var.index=query.var['features']
+
+celltypedict={"Healthy_S1S2":"PT","Healthy_S3":"PT","Fib":"Fib","EC1":"EC","Failed_Repair_PT":"PT","DCT":"DCT","CTAL1":"TAL","CTAL2":"TAL",
+              "DTL-ATL":"DTL-ATL","ICB":"ICB","CNT":"CNT","DCT-CNT":"DCT","ICA":"ICA","MTAL":"TAL","Mo":"Myeloid","PC1":"PC","Per":"Pericyte","PC2":"PC","Tcell":"Lymphocyte",
+              "POD":"POD","PEC":"PEC","URO":"URO","MD":"MD","EC2":"EC","Repairing_PT":"PT","Injured_S1S2":"PT","Severe_Injured_PT":"PT",
+              "Injured_S3":"PT"}
+query.obs['celltype_merged2']=query.obs['celltype2'].map(celltypedict)
+
+celltypedict={"PT":"PT","DTL_ATL":"DTL_ATL","TAL":"TAL",
+              "DCT":"DCT","ICA":"ICA","ICB":"ICB","PC":"PC","Myeloid":"Myeloid","Lymphocyte":"Lymphocyte","PEC":"PEC","EC":"EC",
+              "POD":"POD","Fib":"Fib","Pericyte":"Pericyte"}
+train.obs['celltype_merged2']=train.obs['nuctype3'].map(celltypedict)
+
+# Internal Validation
+
+sc.pp.normalize_total(train, target_sum=1e4)
+sc.pp.log1p(train)
+sc.pp.highly_variable_genes(train, min_mean=0.0125, max_mean=3, min_disp=0.5)
+
+hvg=train.var['highly_variable']
+train2=train[:,hvg]
+
+np.random.seed(30729)
+train_zoomout, val_zoomout = pySCN.splitCommonAnnData(train2, ncells=1000,dLevel="celltype_merged2",cells_reserved=100)
+
+model_val=svm.SVC()
+model_val.fit(train_zoomout.X,train_zoomout.obs.celltype_merged2)
+
+val_zoomout.obs['predicted_type']=model_val.predict(val_zoomout.X)
+
+cohen_kappa_score(val_zoomout.obs['predicted_type'],val_zoomout.obs['celltype_merged2']) #0.99
+
+
+# Training with all human sample
+# then query on mouse data
+
+model_all=svm.SVC(cache_size=1000)
+model_all.fit(train2.X,train2.obs.celltype_merged2)
+
+query2=query[:,hvg]
+
+query2.obs['predicted_type']=model_all.predict(query2.X)
+
+cohen_kappa_score(query2.obs['predicted_type'],query2.obs['celltype_merged2']) #0.73
+
+# Now subgroup analysis: Control first
+
+train_control=train[train.obs['case_type']=="Healthy_Control",]
+query_control=query[query.obs['Group']=="Control",]
+
+sc.pp.normalize_total(train_control, target_sum=1e4)
+sc.pp.log1p(train_control)
+sc.pp.highly_variable_genes(train_control, min_mean=0.0125, max_mean=3, min_disp=0.5)
+
+hvg=train_control.var['highly_variable']
+train_control2=train_control[:,hvg]
+
+model_control=svm.SVC(cache_size=1000)
+model_control.fit(train_control2.X,train_control2.obs.celltype_merged2)
+
+query_control2=query_control[:,hvg]
+
+query_control2.obs['predicted_type']=model_control.predict(query_control2.X)
+
+cohen_kappa_score(query_control2.obs['predicted_type'],query_control2.obs['celltype_merged2']) #0.77
+
+
+#Now AKI. query on 2days and 14days, and then all AKI samples. 
+
+train_aki=train[train.obs['case_type']=="AKI",]
+query_2d=query[query.obs['Group']=="2days",]
+query_14d=query[query.obs['Group']=='14days',]
+query_aki=query[query.obs['Group']!="Control",]
+
+sc.pp.normalize_total(train_aki, target_sum=1e4)
+sc.pp.log1p(train_aki)
+sc.pp.highly_variable_genes(train_aki, min_mean=0.0125, max_mean=3, min_disp=0.5)
+
+hvg=train_aki.var['highly_variable']
+train_aki2=train_aki[:,hvg]
+
+train_aki2
+
+model_aki=svm.SVC(cache_size=1000)
+model_aki.fit(train_aki2.X,train_aki2.obs.celltype_merged2)
+
+query_2d2=query_2d[:,hvg]
+query_14d2=query_14d[:,hvg]
+query_aki2=query_aki[:,hvg]
+
+query_2d2.obs['predicted_type']=model_aki.predict(query_2d2.X)
+
+cohen_kappa_score(query_2d2.obs['predicted_type'],query_2d2.obs['celltype_merged2']) #0.75
+
+query_14d2.obs['predicted_type']=model_aki.predict(query_14d2.X)
+
+cohen_kappa_score(query_14d2.obs['predicted_type'],query_14d2.obs['celltype_merged2']) #0.69
+
+query_aki2.obs['predicted_type']=model_aki.predict(query_aki2.X)
+
+cohen_kappa_score(query_aki2.obs['predicted_type'],query_aki2.obs['celltype_merged2']) #0.67
