@@ -162,4 +162,6 @@ ggplot(pt_table, aes(x = orig.ident2, y=count,fill = cluster)) +
         panel.background = element_rect(fill = "white", colour = "grey50"))
 ggsave("pt_composition.png",plot = last_plot(),scale = 1, width = 6, height = 5, dpi = 600)
 
-
+#get DEG from PT subclusters for FGSEA
+pt@active.ident<-pt$nuctype1
+ptmarkers<-FindAllMarkers(pt,min.pct = 0,logfc.threshold = 0)
