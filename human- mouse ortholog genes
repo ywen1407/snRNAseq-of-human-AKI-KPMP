@@ -1,0 +1,49 @@
+pip install --quiet pandas numpy sklearn scanpy sklearn statsmodels scipy matplotlib seaborn umap-learn loompy python-igraph
+
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns 
+import scanpy as sc
+import scipy as sp
+import numpy as np
+import anndata
+import loompy
+import pickle
+from scipy import stats
+import matplotlib.pyplot as pl
+from matplotlib import rcParams
+
+sc.settings.verbosity = 3 
+sc.logging.print_header()
+
+human = sc.read_h5ad("~/allcase_01032022.h5ad")
+mouse = sc.read_h5ad("~/IRI0614.h5ad")
+
+human=sc.AnnData(X=human.raw.X,obs=human.obs,var=human.raw.var)
+mouse=sc.AnnData(X=mouse.raw.X,obs=mouse.obs,var=mouse.raw.var)
+
+human.var.index=human.var['_index']
+mouse.var.index=mouse.var['_index']
+
+ortho = pd.read_table("~/mouse_to_human_ortholog.txt")
+mouse2=mouse
+ortho_dict = dict(zip(ortho['Gene name'], ortho['Human gene name']))
+mouse2.var['_index2']= mouse2.var['_index'].map(ortho_dict)
+humangene = human.var_names
+mousegene = mouse2.var['_index2']
+cgenes = humangene.intersection(mousegene)
+len(cgenes)
+human2 = human[:,cgenes]
+mouse3=mouse2[:,mouse2.var._index2.isin(cgenes.tolist())]
+mouse3.var_names=mouse3.var['_index2']
+mouse3.var_names_make_unique()#duplicated gene names will be dropped, this may create issues
+mouse4=mouse3[:,cgenes]
+
+human2.var=human2.var.rename(columns={'_index': 'features'})
+mouse4.var=mouse4.var.drop("_index",axis=1)
+mouse4.var=mouse4.var.rename(columns={'_index2': 'features'})
+
+#now write human2 and mouse4 into h5ad files
+human2.write_h5ad("~/human4integration_01042022.h5ad")
+mouse4.write_h5ad("~/mouse4integration_01042022.h5ad")
