@@ -1,0 +1,47 @@
+library(ggplot2,verbose=F)
+library(Seurat,verbose=F)
+library(dplyr,verbose=F)
+library(SeuratData,verbose=F)
+library(SeuratDisk,verbose=F)
+library(tidyverse,verbose=F)
+
+#mouse dataset downloaded from GSE139107.
+#Code is for reported method by the authors. Kirita et al. PNAS. 2019
+IRI_4h<-readRDS("/mouseIRI/05.2021/IRI_4h.rds")
+IRI_12h<-readRDS("/mouseIRI/05.2021/IRI_12h.rds")
+IRI_2d<-readRDS("/mouseIRI/05.2021/IRI_2d.rds")
+IRI_14d<-readRDS("/mouseIRI/05.2021/IRI_14d.rds")
+IRI_6w<-readRDS("/mouseIRI/05.2021/IRI_6w.rds")
+control<-readRDS("mouseIRI/05.2021/control.rds")
+
+IRI<-merge(control,y=c(IRI_4h,IRI_12h,IRI_2d,IRI_14d,IRI_6w),project="IRI_control")
+#find variable genes, 500 per each dataset, and merge together
+var_genes<-c()
+for (i in unique(IRI$orig.ident)){
+    temp<-subset(IRI,subset=orig.ident==i)
+    temp<-FindVariableFeatures(temp, selection.method = "vst", nfeatures = 500,verbose=F)
+    var_genes<-c(var_genes,temp@assays$RNA@var.features)
+}
+
+IRI@assays$RNA@var.features<-var_genes
+IRI<- ScaleData(IRI,verbose=F)
+IRI<-RunPCA(IRI,verbose=F,npcs=50)
+IRI<-IRI %>% RunHarmony("orig.ident",verbose=F)
+
+harmony_embeddings<-Embeddings(IRI,"harmony")
+dim(harmony_embeddings)
+
+IRI<-RunUMAP(IRI,reduction="harmony",dims=1:30,verbose=F)
+DimPlot(IRI, reduction = "umap",label=T, repel=T, pt.size = .1)
+
+
+#now add annotation
+#annotation also provided by authors. Kirita et al. PNAS. 2019
+annotation<-read.table("/mouseIRI/05.2021/GSE139107_MouseIRI.metadata.txt")
+
+annotation$cellnames<-row.names(annotation)
+cellnames<-data.frame(row.names(IRI@meta.data))
+colnames(cellnames)<-"cellnames"
+meta.data<-left_join(cellnames,annotation,by="cellnames")
+row.names(meta.data)<-meta.data$cellnames
+IRI<-AddMetaData(object=IRI,metadata=meta.data)
