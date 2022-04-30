@@ -1,0 +1,84 @@
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns 
+import scanpy as sc
+import scipy as sp
+import numpy as np
+import anndata
+import loompy
+import pickle
+from scipy import stats
+from sklearn.metrics import cohen_kappa_score
+import matplotlib.pyplot as pl
+from matplotlib import rcParams
+
+sc.settings.verbosity = 3 
+sc.logging.print_header()
+
+import pySingleCellNet as pySCN
+
+adTrain = sc.read_h5ad("/content/drive/MyDrive/KPMP/snRNA/integration/human4integration_01042022.h5ad")
+adQuery = sc.read_h5ad("/content/drive/MyDrive/KPMP/snRNA/integration/mouse4integration_01042022.h5ad")
+
+train=sc.AnnData(X=adTrain.X,obs=adTrain.obs,var=adTrain.var)
+query=sc.AnnData(X=adQuery.X,obs=adQuery.obs,var=adQuery.var)
+
+train.var.index=train.var['features']
+query.var.index=query.var['features']
+
+celltypedict={"Healthy_S1S2":"PT","Healthy_S3":"PT","Fib":"Fib","EC1":"EC","Failed_Repair_PT":"PT","DCT":"DCT","CTAL1":"TAL","CTAL2":"TAL",
+              "DTL-ATL":"DTL-ATL","ICB":"ICB","CNT":"CNT","DCT-CNT":"DCT","ICA":"ICA","MTAL":"TAL","Mo":"Myeloid","PC1":"PC","Per":"Pericyte","PC2":"PC","Tcell":"Lymphocyte",
+              "POD":"POD","PEC":"PEC","URO":"URO","MD":"MD","EC2":"EC","Repairing_PT":"PT","Injured_S1S2":"PT","Severe_Injured_PT":"PT",
+              "Injured_S3":"PT"}
+query.obs['celltype_merged2']=query.obs['celltype2'].map(celltypedict)
+
+celltypedict={"PT":"PT","DTL_ATL":"DTL_ATL","TAL":"TAL",
+              "DCT":"DCT","ICA":"ICA","ICB":"ICB","PC":"PC","Myeloid":"Myeloid","Lymphocyte":"Lymphocyte","PEC":"PEC","EC":"EC",
+              "POD":"POD","Fib":"Fib","Pericyte":"Pericyte"}
+train.obs['celltype_merged2']=train.obs['nuctype3'].map(celltypedict)
+
+#first comparing kappa statistics at the global level 
+
+#internal validataion
+np.random.seed(30729)
+train_zoomout, val_zoomout = pySCN.splitCommonAnnData(train, ncells=1000,dLevel="celltype_merged2",cells_reserved=100)
+
+[cgenesA_zoomout, xpairs_zoomout, tspRF_zoomout] = pySCN.scn_train(train_zoomout, nTopGenes = 100, nRand = 100, nTrees = 1000 ,nTopGenePairs = 100, dLevel = "celltype_merged2", stratify=True, limitToHVG=True)
+
+adVal_zoomout = pySCN.scn_classify(val_zoomout, cgenesA_zoomout, xpairs_zoomout, tspRF_zoomout, nrand = 0)
+
+sc.pl.heatmap(adVal_zoomout, adVal_zoomout.var_names.values, groupby='celltype_merged2', cmap='viridis',swap_axes=True)
+
+adVal_zoomout.obs['cellname']=adVal_zoomout.obs.index
+assessment_zoomout =  pySCN.assess_comm(train_zoomout, adVal_zoomout, resolution = 0.005, nRand = 0, dLevelSID = "cellname", classTrain = "celltype_merged2", classQuery = "celltype_merged2")
+assessment_zoomout['kappa'],assessment_zoomout['accuracy'],assessment_zoomout['AUPRC_w']
+#kappa= .96
+
+#now training using all human data and project on mouse data
+[cgenesA_allhuman_zoomout, xpairs_allhuman_zoomout, tspRF_allhuman_zoomout] = pySCN.scn_train(train, nTopGenes = 100, nRand = 100, nTrees = 1000 ,nTopGenePairs = 100, dLevel = "celltype_merged2", stratify=True, limitToHVG=True)
+query_zoomout = pySCN.scn_classify(query, cgenesA_allhuman_zoomout, xpairs_allhuman_zoomout, tspRF_allhuman_zoomout, nrand = 0)
+cohen_kappa_score(query_zoomout.obs['celltype_merged2'],query_zoomout.obs['SCN_class']) # kappa= 0.45
+
+#training using human control, and project on mouse control
+train_control=train[train.obs['case_type']=="Healthy_Control",]
+query_control=query[query.obs['Group']=="Control",]
+[cgenesA_control, xpairs_control, tspRF_control] = pySCN.scn_train(train_control, nTopGenes = 100, nRand = 100, nTrees = 1000 ,nTopGenePairs = 150, dLevel = "celltype_merged2", stratify=True, limitToHVG=True)
+query_control = pySCN.scn_classify(query_control, cgenesA_control, xpairs_control, tspRF_control, nrand = 0)
+cohen_kappa_score(query_control.obs['celltype_merged2'],query_control.obs['SCN_class']) #kappa= 0.42
+
+#training using human AKI, project on mouse AKI at all timepoints, at 2 days and 14 days. 
+train_aki=train[train.obs['case_type']=="AKI",]
+query_2d=query[query.obs['Group']=="2days",]
+query_14d=query[query.obs['Group']=="14days",]
+query_aki=query[query.obs['Group']!="Control",]
+
+[cgenesA_aki, xpairs_aki, tspRF_aki] = pySCN.scn_train(train_aki, nTopGenes = 100, nRand = 100, nTrees = 1000 ,nTopGenePairs = 100, dLevel = "celltype_merged2", stratify=True, limitToHVG=True)
+query_zoomout_2d = pySCN.scn_classify(query_2d, cgenesA_aki, xpairs_aki, tspRF_aki, nrand = 0)
+cohen_kappa_score(query_zoomout_2d.obs['celltype_merged2'],query_zoomout_2d.obs['SCN_class']) #kappa = 0.54 on AKI at 2 days
+
+query_zoomout_14d = pySCN.scn_classify(query_14d, cgenesA_aki, xpairs_aki, tspRF_aki, nrand = 0)
+cohen_kappa_score(query_zoomout_14d.obs['celltype_merged2'],query_zoomout_14d.obs['SCN_class']) #kappa = 0.5 on AKI at 14 days
+
+query_zoomout_aki = pySCN.scn_classify(query_aki, cgenesA_aki, xpairs_aki, tspRF_aki, nrand = 0)
+cohen_kappa_score(query_zoomout_aki.obs['celltype_merged2'],query_zoomout_aki.obs['SCN_class']) #kappa= 0.43 on AKI at all timepoints. 
