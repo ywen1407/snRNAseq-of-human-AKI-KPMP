@@ -22,9 +22,11 @@ The general work flow is:
 2. snRNA-seq dataset preprocess, remove potential doublets, re-preprocess, and visualize cannonical marker gene expression among clusters of kidney cells. 
 3. differential gene expression and FGSEA
 4. human vs. mouse comparision (2 annotations): global and differentiating proximal tubular cells at differnet health states
+- process mouse IRI dataset published by Kirita et al. 
+- convert mouse genes to human ortholog, and create human, mouse datasets with shared genes. 
 - pysinglecellnet
 - support vector machine
 - SCMAP
-5. gene regulatory network analysis with Epoch and pySCENIC
+6. gene regulatory network analysis with Epoch and pySCENIC
 
 (to be continued) 
