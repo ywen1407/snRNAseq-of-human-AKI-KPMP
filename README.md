@@ -28,5 +28,7 @@ The general work flow is:
 - support vector machine
 - SCMAP
 6. gene regulatory network analysis with Epoch and pySCENIC
-
+- First select 4110 highly variable genes using scanpy. 
+- Epoch to reconstruct transcription factor- target gene pairs and coexpression networks 
+- cis-regulatory network reconstruction by pySCENIC
 (to be continued) 
