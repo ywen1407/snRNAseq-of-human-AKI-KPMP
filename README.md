@@ -28,7 +28,8 @@ The general work flow is:
 - support vector machine
 - SCMAP
 6. gene regulatory network analysis with Epoch and pySCENIC
-- First select 4110 highly variable genes using scanpy. 
+- select 4110 highly variable genes using scanpy for human dataset analysis.
+- create human and mouse 10 random subsamples for internal comparisons. 
+- create human and mouse datasets with ortholog genes for direct comparisons. 
 - Epoch to reconstruct transcription factor- target gene pairs and coexpression networks 
 - cis-regulatory network reconstruction by pySCENIC
-(to be continued) 
