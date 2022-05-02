@@ -11,9 +11,11 @@ Affiliations:
 2. Department of Biomedical Engineering, Johns Hopkins University School of Medicine, Baltimore, MD, USA.
 3. Department of Medicine/Section of Nephrology, Yale School of Medicine, New Haven, CT, USA.
 4. Renal-Electrolyte Division, University of Pittsburgh School of Medicine, Pittsburgh, PA, USA.
+
 *Corresponding author. Email:  chirag.parikh@jhmi.edu; Telephone: 410-955-5268
 
-All dataset can be accessed via the publicly available KPMP respository at: atlas.kpmp.org/repository
+All dataset can be accessed via the publicly available KPMP respository at: atlas.kpmp.org/repository; 
+If you have any questions about the code, please contact first author at ywen14@jhmi.edu. 
 
 The general work flow is:
 1. decontX to remove contamination
